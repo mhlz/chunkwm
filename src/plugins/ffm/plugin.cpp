@@ -34,7 +34,6 @@ internal float MouseMotionInterval;
 internal float LastEventTime;
 internal bool StandbyOnFloat;
 internal int CurrentWindowId = 0;
-internal uint64_t CurrentEventTime = 0;
 internal CFRunLoopTimerRef CurrentTimerRef = NULL;
 
 internal bool
@@ -143,7 +142,6 @@ FocusFollowsMouse(CGEventRef Event)
     Reset();
 
     CurrentWindowId = WindowId;
-    CurrentEventTime = CGEventGetTimestamp(Event);
 
     WindowInfo* info = new WindowInfo;
     info->WindowId = WindowId;
