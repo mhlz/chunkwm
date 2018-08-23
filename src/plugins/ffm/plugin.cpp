@@ -33,6 +33,9 @@ internal AXUIElementRef SystemWideElement;
 internal float MouseMotionInterval;
 internal float LastEventTime;
 internal bool StandbyOnFloat;
+internal int CurrentWindowId = 0;
+internal uint64_t CurrentEventTime = 0;
+internal CFRunLoopTimerRef CurrentTimerRef = NULL;
 
 internal bool
 IsWindowLevelAllowed(int WindowLevel)
@@ -53,6 +56,31 @@ IsWindowLevelAllowed(int WindowLevel)
     return false;
 }
 
+internal void Reset() {
+    CurrentWindowId = 0;
+    if (CurrentTimerRef == NULL) return;
+    
+    CFRunLoopTimerInvalidate(CurrentTimerRef);
+    CFRelease(CurrentTimerRef);
+    CurrentTimerRef = NULL;
+}
+
+struct WindowInfo {
+    int WindowId;
+    AXUIElementRef WindowRef;
+    pid_t WindowPid;
+};
+
+void FocusWindow(CFRunLoopTimerRef timer, void* timerInfo) {
+    WindowInfo* info = (WindowInfo*) timerInfo;
+    
+    AXLibSetFocusedWindow(info->WindowRef);
+    AXLibSetFocusedApplication(info->WindowPid);
+    
+    CFRelease(info->WindowRef);
+    delete info;
+}
+
 internal inline void
 FocusFollowsMouse(CGEventRef Event)
 {
@@ -69,16 +97,32 @@ FocusFollowsMouse(CGEventRef Event)
     CGPoint CursorPosition = CGEventGetLocation(Event);
     CGSFindWindowByGeometry(Connection, 0, 1, 0, &CursorPosition, &WindowPosition, &WindowId, &WindowConnection);
 
-    if (WindowId == 0)                  return;
-    if (Connection == WindowConnection) return;
-    if (WindowId == FocusedWindowId)    return;
+    if (WindowId == 0) {
+	    Reset();
+	    return;
+    }
+    if (Connection == WindowConnection) {
+	    Reset();
+	    return;
+    }
+    if (WindowId == FocusedWindowId) {
+	    Reset();
+	    return;
+    }
 
     CGSGetWindowLevel(Connection, WindowId, &WindowLevel);
-    if (!IsWindowLevelAllowed(WindowLevel)) return;
+    if (!IsWindowLevelAllowed(WindowLevel)) {
+	    Reset();
+	    return;
+    }
+
     CGSConnectionGetPID(WindowConnection, &WindowPid);
 
     AXUIElementCopyElementAtPosition(SystemWideElement, CursorPosition.x, CursorPosition.y, &Element);
-    if (!Element) return;
+    if (!Element) {
+	    Reset();
+	    return;
+    }
 
     if (AXLibGetWindowRole(Element, &Role)) {
         if (CFEqual(Role, kAXWindowRole)) {
@@ -90,11 +134,30 @@ FocusFollowsMouse(CGEventRef Event)
         CFRelease(Role);
     }
 
-    if (!WindowRef) return;
-    AXLibSetFocusedWindow(WindowRef);
-    AXLibSetFocusedApplication(WindowPid);
-    CFRelease(WindowRef);
+    if (!WindowRef){
+	    Reset();
+	    return;
+    }
+    if (WindowId == CurrentWindowId) return;
+
+    Reset();
+
+    CurrentWindowId = WindowId;
+    CurrentEventTime = CGEventGetTimestamp(Event);
+
+    WindowInfo* info = new WindowInfo;
+    info->WindowId = WindowId;
+    info->WindowPid = WindowPid;
+    info->WindowRef = WindowRef;
+
+    CFRunLoopTimerContext context;
+    context.info = info;
+    CFRunLoopTimerRef timer = CFRunLoopTimerCreate(NULL, CFAbsoluteTimeGetCurrent() + 1.0, 0, 0, 0, &FocusWindow, &context);
+    CurrentTimerRef = timer;
+    CFRunLoopRef loop = CFRunLoopGetCurrent();
+    CFRunLoopAddTimer(loop, timer, kCFRunLoopCommonModes);
 }
+
 
 internal bool
 ShouldProcessEvent(CGEventRef Event)
@@ -144,6 +207,7 @@ ApplicationActivatedHandler(void *Data)
 internal inline void
 WindowFocusedHandler(void *Data)
 {
+    Reset();
     macos_window *Window = (macos_window *) Data;
     FocusedWindowId = Window->Id;
 }
@@ -180,6 +244,7 @@ SetMouseModifier(const char *Mod)
 
 PLUGIN_MAIN_FUNC(PluginMain)
 {
+    Reset();
     if (strcmp(Node, "chunkwm_export_application_activated") == 0) {
         ApplicationActivatedHandler(Data);
         return true;
