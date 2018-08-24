@@ -35,6 +35,7 @@ internal float LastEventTime;
 internal bool StandbyOnFloat;
 internal int CurrentWindowId = 0;
 internal CFRunLoopTimerRef CurrentTimerRef = NULL;
+internal float FocusDelay;
 
 internal bool
 IsWindowLevelAllowed(int WindowLevel)
@@ -150,7 +151,7 @@ FocusFollowsMouse(CGEventRef Event)
 
     CFRunLoopTimerContext context;
     context.info = info;
-    CFRunLoopTimerRef timer = CFRunLoopTimerCreate(NULL, CFAbsoluteTimeGetCurrent() + 1.0, 0, 0, 0, &FocusWindow, &context);
+    CFRunLoopTimerRef timer = CFRunLoopTimerCreate(NULL, CFAbsoluteTimeGetCurrent() + FocusDelay, 0, 0, 0, &FocusWindow, &context);
     CurrentTimerRef = timer;
     CFRunLoopRef loop = CFRunLoopGetCurrent();
     CFRunLoopAddTimer(loop, timer, kCFRunLoopCommonModes);
@@ -269,10 +270,12 @@ PLUGIN_BOOL_FUNC(PluginInit)
         BeginCVars(&API);
         CreateCVar("ffm_bypass_modifier", "fn");
         CreateCVar("ffm_standby_on_float", 1);
+        CreateCVar("ffm_focus_delay", 0);
         CreateCVar("mouse_motion_interval", 35.0f);
         SetMouseModifier(CVarStringValue("ffm_bypass_modifier"));
         StandbyOnFloat = CVarIntegerValue("ffm_standby_on_float");
         MouseMotionInterval = CVarFloatingPointValue("mouse_motion_interval");
+	FocusDelay = CVarFloatingPointValue("ffm_focus_delay");
     }
     return Result;
 }
